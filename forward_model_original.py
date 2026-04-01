@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 def default_forward_dict():
     '''Generate a default forward model dictionary'''
     default_Nrays = 10000000
-    default_qrange = 8e-3 *2 
-    default_ngrids = 40 *3
+    default_qrange = 8e-3
+    default_ngrids = 40
 
     forward_dict = {
         ################## Material and Grain setup #######################
@@ -51,7 +51,6 @@ def default_forward_dict():
         'NA_rms' : 7.31e-4/2.35,    # Numerical Aperture variance (rad)
         'eps_rms' : 0.00006,        # incident x-ray energy variance (eV)
         'zl_rms' : 0.6e-6/2.35,     # Gaussian beam width variance (m)
-        'zl_truncation_sigma': None,# optional Gaussian cutoff in sigma for direct-space beam profile
         'D' : 2*np.sqrt(5e-5*1e-3), # physical aperture of objective (m)
         'd1' : 0.274,               # sample-objective distance (m)
         # Setup of the Ghoniometer
@@ -59,34 +58,31 @@ def default_forward_dict():
         'phi' : 0,                  # in rad, sample tilt angle 1 (rocking)
         'chi' : 0,                  # in rad, sample tilt angle 2 (rolling)
         'omega' : 0,                # in rad, sample rotation (in-plane)
-        'mu' : 0,                   # in rad, sample base tilt
-        'Ug' : np.eye(3),          # grain rotation matrix
     }
-    # forward_dict['mu'] = np.deg2rad(forward_dict['two_theta'])      # in rad
+    forward_dict['mu'] = np.deg2rad(forward_dict['two_theta'])      # in rad
     forward_dict['theta'] = np.deg2rad(forward_dict['two_theta']/2) # in rad
-
     return forward_dict
 
 class DFXM_forward():
     def __init__(self, d=default_forward_dict, load_res_fn=None, verbose=False):
         # get the grain rotation matrix
-        # if 'Ug' not in d.keys():
-        #     if 'hkl' in d.keys():
-        #         z_c = d['hkl']/np.linalg.norm(d['hkl'])
-        #         if 'x_c' in d.keys():
-        #             x_c = d['x_c']/np.linalg.norm(d['x_c'])
-        #         else:
-        #             x_c = [1, 0, 0]
-        #         if 'y_c' in d.keys():
-        #             y_c = d['y_c']/np.linalg.norm(d['y_c'])
-        #         else:
-        #             y_c = np.cross(z_c, x_c)
-        #             x_c = np.cross(y_c, z_c)
-        #         # For definition of Ug = U in Eq. 5, U = [x_c^T, y_c^T, z_c^T]^T
-        #         # d['Ug'] = np.transpose([x_c, y_c, z_c])
-        #         d['Ug'] = np.array([x_c, y_c, z_c])
-        #     else:
-        #         d['Ug'] = np.eye(3)
+        if 'Ug' not in d.keys():
+            if 'hkl' in d.keys():
+                z_c = d['hkl']/np.linalg.norm(d['hkl'])
+                if 'x_c' in d.keys():
+                    x_c = d['x_c']/np.linalg.norm(d['x_c'])
+                else:
+                    x_c = [1, 0, 0]
+                if 'y_c' in d.keys():
+                    y_c = d['y_c']/np.linalg.norm(d['y_c'])
+                else:
+                    y_c = np.cross(z_c, x_c)
+                    x_c = np.cross(y_c, z_c)
+                # For definition of Ug = U in Eq. 5, U = [x_c^T, y_c^T, z_c^T]^T
+                # d['Ug'] = np.transpose([x_c, y_c, z_c])
+                d['Ug'] = np.array([x_c, y_c, z_c])
+            else:
+                d['Ug'] = np.eye(3)
 
         # Reset the Goniometer
         if 'phi' not in d.keys(): d['phi'] = 0
@@ -293,7 +289,6 @@ class DFXM_forward():
         # INPUT instrumental settings, related to direct space resolution function
         psize = d['psize']   # pixel size in units of m, in the object plane
         zl_rms = d['zl_rms'] # rms value of Gaussian beam profile, in m, centered at 0
-        zl_truncation_sigma = d.get('zl_truncation_sigma')
         theta_0 = np.deg2rad(d['two_theta']/2) # in rad
         v_hkl = d['hkl']
         TwoDeltaTheta = d['TwoDeltaTheta']
@@ -301,8 +296,6 @@ class DFXM_forward():
         phi = d['phi']
         chi = d['chi']
         omega = d['omega']
-        mu = d['mu']
-
 
         if timeit: 
             tic = time.time()
@@ -317,10 +310,8 @@ class DFXM_forward():
         yl_step = psize/Nsub
         xl_start = ( -psize*Nx/2 + psize/(2*Nsub) )/np.tan(2*theta) # start in xl direction, in m, for zl=0
         xl_step = psize/Nsub/np.tan(2*theta)
-        beam_half_width_sigma = 3 if zl_truncation_sigma is None else float(zl_truncation_sigma)
-        zl_span = 2 * beam_half_width_sigma * zl_rms
-        zl_start = -0.5 * zl_span # start in zl direction, in m, for zl=0
-        zl_step = zl_span/(NNz-1)
+        zl_start = -0.5*zl_rms*6 # start in zl direction, in m, for zl=0
+        zl_step = zl_rms*6/(NNz-1)
 
         qi1_start, qi1_step = -d['q1_range']/2, d['q1_range']/(d['npoints1']-1)
         qi2_start, qi2_step = -d['q2_range']/2, d['q2_range']/(d['npoints2']-1)
@@ -330,18 +321,14 @@ class DFXM_forward():
         q_hkl = v_hkl/Q_norm
 
         # Define the rotation matrices
-        # mu = theta_0
+        mu = theta_0
         M = [[np.cos(mu), 0, np.sin(mu)],
             [0, 1, 0],
             [-np.sin(mu), 0, np.cos(mu)],
         ]
         Omega = np.eye(3)
         Chi = np.eye(3)
-        Phi = np.array([
-            [np.cos(phi), 0, np.sin(phi)],
-            [0, 1, 0],
-            [-np.sin(phi), 0, np.cos(phi)],
-        ])
+        Phi = np.eye(3)
         Gamma = M@Omega@Chi@Phi
         Theta = [[np.cos(theta), 0, np.sin(theta)],
                 [0, 1, 0],
@@ -367,8 +354,6 @@ class DFXM_forward():
         
         XL = XL0 + ZL/np.tan(2*theta)           # Project to image system
         PZ = np.exp(-0.5*(ZL/zl_rms)**2)        # Gaussian beam in zl (a thin slice of sample)
-        if zl_truncation_sigma is not None:
-            PZ[np.abs(ZL) > zl_truncation_sigma * zl_rms] = 0
         RL = np.stack([XL, YL, ZL], axis=-1)    # (NNy,NNz,NNx,3)
         # Determine the location of the pixel on the detector
         DET_IND_Y = np.round((YL-yl_start)/yl_step).astype(int)//Nsub # THIS ALIGNS WITH yl
@@ -381,122 +366,12 @@ class DFXM_forward():
         RG = np.einsum('ji,...j->...i', U, RS)     # NB U inverse, Eq. 7
         Fg = Fg_fun(RG[..., 0], RG[..., 1], RG[..., 2]) # calculate the displacement gradient
 
-
-
-        # # determine the qi for given voxel
-        # Hg = np.swapaxes(np.linalg.inv(Fg), -1, -2) - np.eye(3) # Eq. 31
-        # QS = np.einsum('ij,...jk,k->...i', U, Hg, q_hkl)        # Eq. 32
-        # # QC = QS + np.array([phi - TwoDeltaTheta/2, chi, (TwoDeltaTheta/2)/np.tan(theta_0)])                                          # Eq. 40 (also Eq. 20)
-        # # QI = np.einsum('ij,...j->...i', Theta, QC)              # Eq. 41
-        
-        # # modifed code for general case 
-
-        M0 = [[np.cos(mu), 0, np.sin(mu)],
-            [0, 1, 0],
-            [-np.sin(mu), 0, np.cos(mu)],
-        ]
-        Omega0 = np.eye(3)
-        Chi0 = np.eye(3)
-        Phi0 = np.eye(3)
-        Gamma0 = M0
-
-        # # need to include the orientation matrix 
-        # QL0 = np.einsum('ij,...jk,k->...i', Gamma0, U, QS)
-        # # magnitude of QL0 (keep last axis for broadcasting against (... , 3))
-        # QL0_mag = np.linalg.norm(QL0, axis=-1, keepdims=True)
-        # QL1 = np.einsum('ij,...jk,k->...i', Gamma, U, QS)
-        # # 2026-03-29: Commented out — divides by zero when |QL0| is zero at some voxels (NaNs in QI indices).
-        # QL = (QL1 - QL0) / (QL0_mag + 1e-12)
-        # # QL = np.zeros_like(QL0)
-        # # np.divide(QL1 - QL0, QL0_mag, out=QL, where=QL0_mag > 0)
-
-        # a = 3.567e-10
-        # B0 = (2 * np.pi / a ) * np.eye(3)
-
-        # # define Qg
-        # Qg0 = B0 @ v_hkl
-        # Fg_inv_T = np.swapaxes(np.linalg.inv(Fg), -1, -2)
-        # Qgr = Fg_inv_T @ Qg0
-        # Qsr = U @ Qgr
-        # Qs0 = U @ Qg0
-        # Qlr = Gamma @ Qsr
-        # Ql0 = Gamma0 @ Qs0
-        # theta_eff = theta_0 + TwoDeltaTheta/2
-        # Theta_eff = np.array([
-        #     [np.cos(theta_eff), 0, np.sin(theta_eff)],
-        #     [0, 1, 0],
-        #     [-np.sin(theta_eff), 0, np.cos(theta_eff)]
-        # ])
-        # Qcr = Theta_eff @ Qlr
-        # Qc0 = Theta_eff @ Ql0
-        # Qir = Theta_eff @ Qcr
-        # Qi0 = Theta_eff @ Qc0
-        # Qi0_mag = np.linalg.norm(Qi0)
-
-        # QI = (Qir - Qi0) / (Qi0_mag + 1e-12)
-        # qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)
-
-        a = 3.567e-10
-        B0 = (2.0 * np.pi / a) * np.eye(3)
-
-        # grain-frame reciprocal vector
-        Qg0 = B0 @ v_hkl
-        Q0_mag = np.linalg.norm(Qg0)
-
-        # reciprocal deformation in grain frame: (...,3,3) -> (...,3)
-        Fg_inv_T = np.swapaxes(np.linalg.inv(Fg), -1, -2)
-        Qgr = np.einsum('...ij,j->...i', Fg_inv_T, Qg0)
-
-        # grain -> sample -> lab for vector field
-        Qsr = np.einsum('ij,...j->...i', U, Qgr)
-        Qlr = np.einsum('ij,...j->...i', Gamma, Qsr)
-
-        # reference vector at nominal geometry
-        Qs0 = U @ Qg0
-        Ql0 = Gamma0 @ Qs0
-
-        theta_eff = theta_0 + TwoDeltaTheta / 2.0
-        Theta_eff = np.array([
-            [np.cos(theta_eff), 0.0, np.sin(theta_eff)],
-            [0.0, 1.0, 0.0],
-            [-np.sin(theta_eff), 0.0, np.cos(theta_eff)],
-        ])
-
-        # lab -> crystal reference -> imaging
-        Qcr = np.einsum('ij,...j->...i', Theta_eff, Qlr)
-        Qc0 = Theta_eff @ Ql0
-
-        Qir = np.einsum('ij,...j->...i', Theta_eff, Qcr)
-        Qi0 = Theta_eff @ Qc0
-
-        Qi0_mag = np.linalg.norm(Qi0)
-
-        # # check if Qi0_mag = Q0_mag
-        # print(Qi0_mag, Q0_mag)
-
-        QI = (Qir - Qi0) / (Qi0_mag + 1e-12)
-
-        qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)
-
-
-        # QL0 = Gamma0 @ U @ B0 @ v_hkl
-        # QL0_mag = np.linalg.norm(QL0, axis=-1, keepdims=True)
-        # QL1 = Gamma @ U @ np.linalg.inv(Fg) @ B0 @ v_hkl
-
-        # QL = (QL1 - QL0) / (QL0_mag + 1e-12)
-
-        # theta_eff = theta_0 + TwoDeltaTheta/2
-        # Theta_eff = np.array([
-        #     [np.cos(theta_eff), 0, np.sin(theta_eff)],
-        #     [0, 1, 0],
-        #     [-np.sin(theta_eff), 0, np.cos(theta_eff)]
-        # ])
-
-        # QC = np.einsum('ij,...j->...i', Theta_eff, QL)
-
-        # QI = np.einsum('ij,...j->...i', Theta_eff, QC)
-        
-        # qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)     # for plotting, sorted in order x_l,y_l,z_l,:
+        # determine the qi for given voxel
+        Hg = np.swapaxes(np.linalg.inv(Fg), -1, -2) - np.eye(3) # Eq. 31
+        QS = np.einsum('ij,...jk,k->...i', U, Hg, q_hkl)        # Eq. 32
+        QC = QS + np.array([phi - TwoDeltaTheta/2, chi, (TwoDeltaTheta/2)/np.tan(theta_0)])                                          # Eq. 40 (also Eq. 20)
+        QI = np.einsum('ij,...j->...i', Theta, QC)              # Eq. 41
+        qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)     # for plotting, sorted in order x_l,y_l,z_l,:
 
         # Interpolation in rec. space resolution function.
         IND1 = np.floor( (QI[...,0] - qi1_start)/qi1_step).astype(int)
@@ -530,43 +405,43 @@ class DFXM_forward():
 
         return im, qi_field, rulers
 
-    # def get_rot_matrices(self, chi=None, phi=None, mu=None):
-    #     '''Returns rotation matrices reuired to go from sample to lab frame
+    def get_rot_matrices(self, chi=None, phi=None, mu=None):
+        '''Returns rotation matrices reuired to go from sample to lab frame
 
-    #     Parameters
-    #     ----------
-    #     chi : float, optional
-    #         rolling angle of the sample (rad)
-    #     phi : float, optional
-    #         rocking angle of the sample (rad)
-    #     mu : float, optional
-    #         base tilt of the sample (rad)
+        Parameters
+        ----------
+        chi : float, optional
+            rolling angle of the sample (rad)
+        phi : float, optional
+            rocking angle of the sample (rad)
+        mu : float, optional
+            base tilt of the sample (rad)
 
-    #     Returns
-    #     -------
-    #     Chi : numpy array
-    #         rotation matrix for rolling
-    #     Phi : numpy array
-    #         rotation matrix for rocking
-    #     Mu : numpy array
-    #         rotation matrix for base tilt
-    #     '''
-    #     if chi is None:
-    #         chi = self.d['chi']
-    #     if phi is None:
-    #         phi = self.d['phi']
-    #     if mu is None:
-    #         mu = self.d['mu']
-    #     Chi = np.array([[1,           0,            0], 
-    #                     [0, np.cos(chi), -np.sin(chi)],
-    #                     [0, np.sin(chi),  np.cos(chi)],
-    #                    ])
-    #     Phi = np.array([[ np.cos(phi), 0, np.sin(phi)],
-    #                     [           0, 1,           0],
-    #                     [-np.sin(phi), 0, np.cos(phi)],
-    #                    ])
-    #     Mu = np.array([[ np.cos(mu), 0, -np.sin(mu)],
-    #                    [         0,  1,          0],
-    #                    [ np.sin(mu), 0,  np.cos(mu)],
-    #                   ])            # Eq. 14, opposite to phi
-    #     return Chi, Phi, Mu
+        Returns
+        -------
+        Chi : numpy array
+            rotation matrix for rolling
+        Phi : numpy array
+            rotation matrix for rocking
+        Mu : numpy array
+            rotation matrix for base tilt
+        '''
+        if chi is None:
+            chi = self.d['chi']
+        if phi is None:
+            phi = self.d['phi']
+        if mu is None:
+            mu = self.d['mu']
+        Chi = np.array([[1,           0,            0], 
+                        [0, np.cos(chi), -np.sin(chi)],
+                        [0, np.sin(chi),  np.cos(chi)],
+                       ])
+        Phi = np.array([[ np.cos(phi), 0, np.sin(phi)],
+                        [           0, 1,           0],
+                        [-np.sin(phi), 0, np.cos(phi)],
+                       ])
+        Mu = np.array([[ np.cos(mu), 0, -np.sin(mu)],
+                       [         0,  1,          0],
+                       [ np.sin(mu), 0,  np.cos(mu)],
+                      ])            # Eq. 14, opposite to phi
+        return Chi, Phi, Mu

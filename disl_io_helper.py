@@ -1,5 +1,6 @@
-from os import link
-from re import T
+# 2026-03-22: Commented out unused imports that break on Python 3.13+
+# from os import link
+# from re import T
 import sys
 import numpy as np
 import scipy as sp

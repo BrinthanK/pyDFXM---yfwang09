@@ -398,7 +398,7 @@ class DFXM_forward():
         Omega0 = np.eye(3)
         Chi0 = np.eye(3)
         Phi0 = np.eye(3)
-        Gamma0 = M0
+        Gamma0 = M0@Omega0@Chi0@Phi0 
 
         # # need to include the orientation matrix 
         # QL0 = np.einsum('ij,...jk,k->...i', Gamma0, U, QS)
@@ -410,93 +410,28 @@ class DFXM_forward():
         # # QL = np.zeros_like(QL0)
         # # np.divide(QL1 - QL0, QL0_mag, out=QL, where=QL0_mag > 0)
 
-        # a = 3.567e-10
-        # B0 = (2 * np.pi / a ) * np.eye(3)
-
-        # # define Qg
-        # Qg0 = B0 @ v_hkl
-        # Fg_inv_T = np.swapaxes(np.linalg.inv(Fg), -1, -2)
-        # Qgr = Fg_inv_T @ Qg0
-        # Qsr = U @ Qgr
-        # Qs0 = U @ Qg0
-        # Qlr = Gamma @ Qsr
-        # Ql0 = Gamma0 @ Qs0
-        # theta_eff = theta_0 + TwoDeltaTheta/2
-        # Theta_eff = np.array([
-        #     [np.cos(theta_eff), 0, np.sin(theta_eff)],
-        #     [0, 1, 0],
-        #     [-np.sin(theta_eff), 0, np.cos(theta_eff)]
-        # ])
-        # Qcr = Theta_eff @ Qlr
-        # Qc0 = Theta_eff @ Ql0
-        # Qir = Theta_eff @ Qcr
-        # Qi0 = Theta_eff @ Qc0
-        # Qi0_mag = np.linalg.norm(Qi0)
-
-        # QI = (Qir - Qi0) / (Qi0_mag + 1e-12)
-        # qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)
-
         a = 3.567e-10
-        B0 = (2.0 * np.pi / a) * np.eye(3)
 
-        # grain-frame reciprocal vector
-        Qg0 = B0 @ v_hkl
-        Q0_mag = np.linalg.norm(Qg0)
+        B0 = (2 * np.pi / a ) * np.eye(3)
 
-        # reciprocal deformation in grain frame: (...,3,3) -> (...,3)
-        Fg_inv_T = np.swapaxes(np.linalg.inv(Fg), -1, -2)
-        Qgr = np.einsum('...ij,j->...i', Fg_inv_T, Qg0)
+        QL0 = Gamma0 @ U @ B0 @ v_hkl
+        QL0_mag = np.linalg.norm(QL0, axis=-1, keepdims=True)
+        QL1 = Gamma @ U @ np.linalg.inv(Fg) @ B0 @ v_hkl
 
-        # grain -> sample -> lab for vector field
-        Qsr = np.einsum('ij,...j->...i', U, Qgr)
-        Qlr = np.einsum('ij,...j->...i', Gamma, Qsr)
+        QL = (QL1 - QL0) / (QL0_mag + 1e-12)
 
-        # reference vector at nominal geometry
-        Qs0 = U @ Qg0
-        Ql0 = Gamma0 @ Qs0
-
-        theta_eff = theta_0 + TwoDeltaTheta / 2.0
+        theta_eff = theta_0 + TwoDeltaTheta/2
         Theta_eff = np.array([
-            [np.cos(theta_eff), 0.0, np.sin(theta_eff)],
-            [0.0, 1.0, 0.0],
-            [-np.sin(theta_eff), 0.0, np.cos(theta_eff)],
+            [np.cos(theta_eff), 0, np.sin(theta_eff)],
+            [0, 1, 0],
+            [-np.sin(theta_eff), 0, np.cos(theta_eff)]
         ])
 
-        # lab -> crystal reference -> imaging
-        Qcr = np.einsum('ij,...j->...i', Theta_eff, Qlr)
-        Qc0 = Theta_eff @ Ql0
+        QC = np.einsum('ij,...j->...i', Theta_eff, QL)
 
-        Qir = np.einsum('ij,...j->...i', Theta_eff, Qcr)
-        Qi0 = Theta_eff @ Qc0
-
-        Qi0_mag = np.linalg.norm(Qi0)
-
-        # # check if Qi0_mag = Q0_mag
-        # print(Qi0_mag, Q0_mag)
-
-        QI = (Qir - Qi0) / (Qi0_mag + 1e-12)
-
-        qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)
-
-
-        # QL0 = Gamma0 @ U @ B0 @ v_hkl
-        # QL0_mag = np.linalg.norm(QL0, axis=-1, keepdims=True)
-        # QL1 = Gamma @ U @ np.linalg.inv(Fg) @ B0 @ v_hkl
-
-        # QL = (QL1 - QL0) / (QL0_mag + 1e-12)
-
-        # theta_eff = theta_0 + TwoDeltaTheta/2
-        # Theta_eff = np.array([
-        #     [np.cos(theta_eff), 0, np.sin(theta_eff)],
-        #     [0, 1, 0],
-        #     [-np.sin(theta_eff), 0, np.cos(theta_eff)]
-        # ])
-
-        # QC = np.einsum('ij,...j->...i', Theta_eff, QL)
-
-        # QI = np.einsum('ij,...j->...i', Theta_eff, QC)
+        QI = np.einsum('ij,...j->...i', Theta_eff, QC)
         
-        # qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)     # for plotting, sorted in order x_l,y_l,z_l,:
+        qi_field = np.swapaxes(np.swapaxes(QI, 2, 1), 1, 0)     # for plotting, sorted in order x_l,y_l,z_l,:
 
         # Interpolation in rec. space resolution function.
         IND1 = np.floor( (QI[...,0] - qi1_start)/qi1_step).astype(int)

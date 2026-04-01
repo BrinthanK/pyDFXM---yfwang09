@@ -59,12 +59,13 @@ input_dict['rn'] = rn
 input_dict['links'] = links
 disl = dgf.disl_network(input_dict)
 
+
 #%%-------------------------------------------------------
 # CALCULATE THE DISPLACEMENT GRADIENT
 #---------------------------------------------------------
 
 forward_dict = fwd.default_forward_dict()
-
+forward_dict['mu'] = np.deg2rad(80) # in rad
 # if you want to change the forward model setup
 # forward_dict['hkl'] = [1, 1, 1]
 # forward_dict['x_c'] = [1, -1, 0]
@@ -188,7 +189,8 @@ U = d['Ug']
 phi = d['phi']
 chi = d['chi']
 omega = d['omega']
-eta = np.deg2rad(30) # in rad
+eta = 0 # in rad
+mu = d['mu']
 
 # Grid size in the imaging coordinates
 yi_start = -psize*Ny/2 + psize/(2*Nsub) # start in yi direction, in units of m, centered at 0
@@ -199,7 +201,7 @@ zl_start = -0.5*zl_rms*6 # start in zl direction, in m, for zl=0
 zl_step = zl_rms*6/(NNz-1)
 
 # rotation of the imaging coordinates
-mu = theta_0
+# mu = theta_0
 M = np.matrix([[np.cos(mu), 0, np.sin(mu)],
     [0, 1, 0],
     [-np.sin(mu), 0, np.cos(mu)],
